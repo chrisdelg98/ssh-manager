@@ -96,13 +96,13 @@ function beginStreamResponse(): void
     @ini_set('zlib.output_compression', '0');
     @set_time_limit(0);
 
-    while (ob_get_level() > 0) {
-        @ob_end_flush();
-    }
-
     header('Content-Type: application/x-ndjson; charset=utf-8');
     header('Cache-Control: no-cache, no-store, must-revalidate');
     header('X-Accel-Buffering: no');
+
+    while (ob_get_level() > 0) {
+        @ob_end_flush();
+    }
 }
 
 function streamEvent(array $event): void
