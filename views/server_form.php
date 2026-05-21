@@ -72,12 +72,14 @@ include __DIR__ . '/layout.php';
 
   <div class="form-group" id="field_password">
     <label>Contraseña SSH<?= $isEdit ? ' (dejar vacío para no cambiar)' : ' *' ?></label>
-    <input type="password" name="credential" <?= $isEdit ? '' : 'required' ?> autocomplete="new-password">
+    <input type="password" name="credential_pass" <?= $isEdit ? '' : 'required' ?>
+           autocomplete="new-password" id="input_credential_pass">
   </div>
 
   <div class="form-group" id="field_key" style="display:none">
     <label>Llave Privada (contenido PEM)<?= $isEdit ? ' (dejar vacío para no cambiar)' : ' *' ?></label>
-    <textarea name="credential" rows="6" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;..."></textarea>
+    <textarea name="credential_key" rows="6" id="input_credential_key"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
   </div>
 
   <div class="form-group">

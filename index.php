@@ -210,14 +210,27 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             requireCsrf();
             try {
+                $authType   = $_POST['auth_type'] ?? 'password';
+                $credential = $authType === 'key'
+                    ? trim($_POST['credential_key'] ?? '')
+                    : ($_POST['credential_pass'] ?? '');
+
+                if ($credential === '') {
+                    throw new \InvalidArgumentException(
+                        $authType === 'key'
+                            ? 'La llave privada es obligatoria.'
+                            : 'La contraseña SSH es obligatoria.'
+                    );
+                }
+
                 $id = $svc['servers']->create(
                     trim($_POST['name']),
                     $_POST['type'],
                     trim($_POST['host']),
                     (int)($_POST['port'] ?? 22),
                     trim($_POST['ssh_user']),
-                    $_POST['auth_type'],
-                    $_POST['credential'],
+                    $authType,
+                    $credential,
                     trim($_POST['notes'] ?? ''),
                     $_POST['color_tag'] ?? '#4A90D9'
                 );
@@ -238,9 +251,10 @@ switch ($action) {
         $serverId = (int)($_GET['id'] ?? 0);
         try {
             $server = $svc['servers']->get($serverId);
-        } catch (\Throwable) {
-            // Decryption failed — server was encrypted with a different master password
-            $_SESSION['dashboard_error'] = 'No se puede descifrar el servidor. Fue cifrado con un Master Password diferente. Elimínalo y agrégalo de nuevo.';
+        } catch (\Throwable $e) {
+            error_log('[server_edit] get() failed for ID ' . $serverId . ': ' . $e->getMessage());
+            $_SESSION['dashboard_error'] = 'No se pudo abrir el servidor. Intenta cerrar sesión y volver a entrar. '
+                . 'Si el problema persiste, elimínalo y agrégalo de nuevo.';
             header('Location: ?action=dashboard');
             exit;
         }
@@ -251,6 +265,13 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             requireCsrf();
             try {
+                $authType       = $_POST['auth_type'] ?? 'password';
+                $rawCredential  = $authType === 'key'
+                    ? trim($_POST['credential_key'] ?? '')
+                    : ($_POST['credential_pass'] ?? '');
+                // null = keep existing encrypted credential; non-empty = replace
+                $newCredential  = $rawCredential !== '' ? $rawCredential : null;
+
                 $svc['servers']->update(
                     $serverId,
                     trim($_POST['name']),
@@ -258,8 +279,8 @@ switch ($action) {
                     trim($_POST['host']),
                     (int)($_POST['port'] ?? 22),
                     trim($_POST['ssh_user']),
-                    $_POST['auth_type'],
-                    !empty($_POST['credential']) ? $_POST['credential'] : null,
+                    $authType,
+                    $newCredential,
                     trim($_POST['notes'] ?? ''),
                     $_POST['color_tag'] ?? '#4A90D9'
                 );

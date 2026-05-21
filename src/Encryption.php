@@ -77,7 +77,8 @@ class Encryption
         }
 
         $blob = base64_decode($encoded, true);
-        if ($blob === false || strlen($blob) < self::IV_LEN + self::TAG_LEN + 1) {
+        // AES-GCM allows empty plaintext — minimum valid blob is exactly IV + TAG (28 bytes).
+        if ($blob === false || strlen($blob) < self::IV_LEN + self::TAG_LEN) {
             throw new \RuntimeException('Invalid ciphertext');
         }
 
