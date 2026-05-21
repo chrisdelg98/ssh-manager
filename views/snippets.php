@@ -61,7 +61,9 @@ $cat = $_GET['cat'] ?? '';
                   onclick="copySnippet(this)">Copiar</button>
           <a href="?action=snippet_edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-ghost">Editar</a>
           <form method="POST" action="?action=snippet_delete" style="display:inline"
-                data-confirm="¿Eliminar este snippet?">
+                data-confirm-title="Eliminar snippet"
+                data-confirm="Vas a eliminar &quot;<?= htmlspecialchars($s['title'], ENT_QUOTES) ?>&quot;.&#10;Esta acción no se puede deshacer."
+                data-confirm-action="Sí, eliminar">
             <?= CsrfGuard::field() ?>
             <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
             <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>

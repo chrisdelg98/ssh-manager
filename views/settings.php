@@ -46,7 +46,10 @@ $themes = [
   <h3>Cambiar Master Password</h3>
   <p class="card-desc">Al cambiarla, todas las credenciales y claves SSH se re-encriptan automáticamente con la nueva clave derivada.</p>
   <form method="POST" action="?action=settings_save" autocomplete="off"
-        data-confirm="¿Seguro? Esto re-encripta TODAS las credenciales y claves SSH almacenadas. La operación es atómica pero no se puede deshacer.">
+        data-confirm-title="Cambiar Master Password"
+        data-confirm="Esto re-encripta TODAS las credenciales y claves SSH con la nueva clave.&#10;La operación es atómica pero no se puede deshacer.&#10;Si pierdes el nuevo Master Password, perderás acceso a tus servidores."
+        data-confirm-action="Sí, cambiar"
+        data-confirm-variant="primary">
     <?= CsrfGuard::field() ?>
     <input type="hidden" name="settings_type" value="master_password">
     <div class="form-group">

@@ -43,20 +43,35 @@ class Logger
         ?int    $serverId = null,
         ?string $detail   = null
     ): void {
-        $encDetail = $detail ? Encryption::encrypt($detail, $this->encKey) : null;
+        $encDetail = null;
+        if ($detail !== null && $detail !== '') {
+            try {
+                $encDetail = Encryption::encrypt($detail, $this->encKey);
+            } catch (\Throwable $e) {
+                // Audit trail must NEVER break the action being audited.
+                // We still record the action/status; detail is omitted.
+                error_log('[Logger] detail encryption skipped: ' . $e->getMessage());
+                $encDetail = null;
+            }
+        }
 
-        $stmt = $this->db->prepare(
-            'INSERT INTO audit_logs (user_id, server_id, action_type, detail_enc, ip_address, status)
-             VALUES (?, ?, ?, ?, ?, ?)'
-        );
-        $stmt->execute([
-            $userId,
-            $serverId,
-            $actionType,
-            $encDetail,
-            $this->clientIp(),
-            $status,
-        ]);
+        try {
+            $stmt = $this->db->prepare(
+                'INSERT INTO audit_logs (user_id, server_id, action_type, detail_enc, ip_address, status)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([
+                $userId,
+                $serverId,
+                $actionType,
+                $encDetail,
+                $this->clientIp(),
+                $status,
+            ]);
+        } catch (\Throwable $e) {
+            // DB write of the log itself failed — log to PHP error log but do not throw.
+            error_log('[Logger] insert failed: ' . $e->getMessage());
+        }
     }
 
     /**

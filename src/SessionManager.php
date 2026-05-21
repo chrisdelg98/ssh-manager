@@ -101,10 +101,30 @@ class SessionManager
         return $_SESSION['username'] ?? null;
     }
 
+    /**
+     * Returns the 32-byte AES key for the current session, or null if absent/corrupt.
+     * Tolerates both the current base64-encoded format and any legacy raw-binary value
+     * that may still be sitting in old sessions.
+     */
     public function encKey(): ?string
     {
         $stored = $_SESSION['enc_key'] ?? null;
-        return $stored !== null ? base64_decode($stored) : null;
+        if ($stored === null || $stored === '') {
+            return null;
+        }
+
+        // Current format: base64 string of 32 binary bytes
+        $decoded = base64_decode($stored, true);
+        if ($decoded !== false && strlen($decoded) === 32) {
+            return $decoded;
+        }
+
+        // Legacy format: raw 32 binary bytes stored directly
+        if (strlen($stored) === 32) {
+            return $stored;
+        }
+
+        return null;
     }
 
     private function fingerprint(): string

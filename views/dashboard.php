@@ -85,7 +85,9 @@ $topType = $byType ? array_key_first($byType) : '—';
               <a href="?action=terminal&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-primary">Terminal</a>
               <a href="?action=server_edit&id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-ghost">Editar</a>
               <form method="POST" action="?action=server_delete" style="display:inline"
-                    data-confirm="¿Eliminar <?= htmlspecialchars(addslashes($s['name'])) ?>? Esta acción es definitiva.">
+                    data-confirm-title="Eliminar servidor"
+                    data-confirm="Vas a eliminar &quot;<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>&quot;.&#10;Esta acción es definitiva y no se puede deshacer."
+                    data-confirm-action="Sí, eliminar">
                 <?= CsrfGuard::field() ?>
                 <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
                 <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>

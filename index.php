@@ -41,9 +41,19 @@ $action = preg_replace('/[^a-z0-9_]/', '', strtolower($action));
 // Public actions (no auth required)
 $publicActions = ['login', 'login_step2', 'login_step3', 'logout'];
 
-if (!in_array($action, $publicActions, true) && !$session->isAuthenticated()) {
-    header('Location: ?action=login');
-    exit;
+if (!in_array($action, $publicActions, true)) {
+    if (!$session->isAuthenticated()) {
+        header('Location: ?action=login');
+        exit;
+    }
+    // Guard against a session that has lost (or never had) a usable enc_key.
+    // Without it nothing can be decrypted or audited correctly — force a clean re-login.
+    if ($session->encKey() === null) {
+        $session->destroy();
+        $_SESSION['login_error'] = 'Tu sesión expiró o quedó incompleta. Inicia sesión de nuevo.';
+        header('Location: ?action=login&err=expired');
+        exit;
+    }
 }
 
 // ── Service factory (only after auth) ────────────────────────────────────────

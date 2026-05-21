@@ -41,7 +41,9 @@ include __DIR__ . '/layout.php';
         <div class="key-meta">Agregada: <?= htmlspecialchars($k['created_at']) ?></div>
         <div class="key-actions">
           <form method="POST" action="?action=key_delete" style="display:inline"
-                data-confirm="¿Eliminar la clave '<?= htmlspecialchars(addslashes($k['name'])) ?>'? Esto NO afecta los servidores que la copiaron en su credencial.">
+                data-confirm-title="Eliminar clave SSH"
+                data-confirm="Vas a eliminar la clave &quot;<?= htmlspecialchars($k['name'], ENT_QUOTES) ?>&quot;.&#10;Los servidores que la tengan asignada perderán la referencia (no se desactivan).&#10;Esta acción no se puede deshacer."
+                data-confirm-action="Sí, eliminar">
             <?= CsrfGuard::field() ?>
             <input type="hidden" name="id" value="<?= (int)$k['id'] ?>">
             <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
