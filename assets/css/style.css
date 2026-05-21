@@ -541,9 +541,44 @@ select option { background: var(--surface); color: var(--text); }
 .terminal-line { margin-bottom: .2rem; white-space: pre-wrap; word-break: break-all; }
 .terminal-cmd  { color: #79c7ff; }
 .terminal-ok   { color: #a8e8b0; }
+.terminal-done { color: var(--ok); }
 .terminal-warn { color: #ffd166; }
 .terminal-err  { color: #ff6b7a; }
 .terminal-welcome { color: #6e8c70; font-style: italic; }
+.terminal-status {
+  padding: .45rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-family: var(--mono);
+  font-size: .78rem;
+}
+.terminal-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: .55rem;
+  border-radius: 50%;
+  background: var(--info);
+  box-shadow: 0 0 8px var(--info);
+}
+.terminal-status[data-state="running"]::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.terminal-status[data-state="done"]::before {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+.terminal-status[data-state="warn"]::before {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+.terminal-status[data-state="error"]::before {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
 .terminal-input-row {
   display: flex; align-items: center; gap: .5rem;
   padding: .65rem 1rem;

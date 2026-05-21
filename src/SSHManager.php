@@ -30,6 +30,22 @@ class SSHManager
         return false;
     }
 
+    private function connect(array $server): SSH2
+    {
+        $ssh = new SSH2($server['host'], (int)$server['port'], $this->timeout);
+
+        if ($server['auth_type'] === 'key') {
+            $key = PublicKeyLoader::load($server['credential']);
+            if (!$ssh->login($server['ssh_user'], $key)) {
+                throw new \RuntimeException('Key authentication failed');
+            }
+        } elseif (!$ssh->login($server['ssh_user'], $server['credential'])) {
+            throw new \RuntimeException('Password authentication failed');
+        }
+
+        return $ssh;
+    }
+
     /**
      * Execute a single command on a server.
      * Returns ['output' => string, 'exit_code' => int, 'error' => string|null]
@@ -45,20 +61,7 @@ class SSHManager
         }
 
         try {
-            $ssh = new SSH2($server['host'], (int)$server['port'], $this->timeout);
-
-            // Authenticate
-            if ($server['auth_type'] === 'key') {
-                $key = PublicKeyLoader::load($server['credential']);
-                if (!$ssh->login($server['ssh_user'], $key)) {
-                    return ['output' => '', 'exit_code' => -1, 'error' => 'Key authentication failed'];
-                }
-            } else {
-                if (!$ssh->login($server['ssh_user'], $server['credential'])) {
-                    return ['output' => '', 'exit_code' => -1, 'error' => 'Password authentication failed'];
-                }
-            }
-
+            $ssh = $this->connect($server);
             $ssh->setTimeout($this->timeout);
 
             $output = $ssh->exec($command);
@@ -86,6 +89,86 @@ class SSHManager
     }
 
     /**
+     * Execute one command and stream stdout/stderr chunks as they arrive.
+     *
+     * $onEvent receives arrays like:
+     * ['type' => 'output', 'data' => '...'] or ['type' => 'status', 'message' => '...'].
+     */
+    public function streamExecute(array $server, string $command, callable $onEvent): array
+    {
+        if (!$this->isReachable($server['host'], (int)$server['port'])) {
+            return [
+                'output'    => '',
+                'exit_code' => -1,
+                'error'     => "Cannot reach {$server['host']}:{$server['port']} — port unreachable or blocked by hosting provider",
+                'timed_out' => false,
+                'truncated' => false,
+            ];
+        }
+
+        $captured  = '';
+        $truncated = false;
+
+        try {
+            $onEvent(['type' => 'status', 'message' => 'Conectando por SSH...']);
+            $ssh = $this->connect($server);
+            $ssh->setTimeout($this->timeout);
+            $onEvent([
+                'type'    => 'status',
+                'message' => "Ejecutando. Si no hay salida por {$this->timeout}s se marcará como timeout.",
+            ]);
+
+            $ssh->exec($command, function (string $chunk) use (&$captured, &$truncated, $onEvent): void {
+                if ($chunk === '') {
+                    return;
+                }
+
+                $onEvent(['type' => 'output', 'data' => $chunk]);
+
+                if (strlen($captured) < $this->outputLimit) {
+                    $remaining = $this->outputLimit - strlen($captured);
+                    $captured .= substr($chunk, 0, $remaining);
+
+                    if (strlen($chunk) > $remaining) {
+                        $truncated = true;
+                    }
+                } else {
+                    $truncated = true;
+                }
+            });
+
+            $exitCode = $ssh->getExitStatus();
+            $timedOut = method_exists($ssh, 'isTimeout') && $ssh->isTimeout();
+
+            $error = null;
+            if ($timedOut) {
+                $error = "Timeout: no hubo salida durante {$this->timeout}s. Puede que el comando siga esperando confirmación/input o se haya quedado detenido.";
+            }
+
+            if ($truncated) {
+                $captured .= "\n\n[Output truncated in audit log at " . number_format($this->outputLimit) . " bytes]";
+            }
+
+            return [
+                'output'    => $captured,
+                'exit_code' => $exitCode === null ? ($timedOut ? -1 : 0) : (int)$exitCode,
+                'error'     => $error,
+                'timed_out' => $timedOut,
+                'truncated' => $truncated,
+            ];
+
+        } catch (\Throwable $e) {
+            return [
+                'output'    => $captured,
+                'exit_code' => -1,
+                'error'     => 'SSH error: ' . $e->getMessage(),
+                'timed_out' => false,
+                'truncated' => $truncated,
+            ];
+        }
+    }
+
+    /**
      * Execute multiple commands in sequence (for templates).
      * Returns array of per-step results.
      */
@@ -104,18 +187,7 @@ class SSHManager
         $results = [];
 
         try {
-            $ssh = new SSH2($server['host'], (int)$server['port'], $this->timeout);
-
-            if ($server['auth_type'] === 'key') {
-                $key = PublicKeyLoader::load($server['credential']);
-                if (!$ssh->login($server['ssh_user'], $key)) {
-                    throw new \RuntimeException('Key authentication failed');
-                }
-            } else {
-                if (!$ssh->login($server['ssh_user'], $server['credential'])) {
-                    throw new \RuntimeException('Password authentication failed');
-                }
-            }
+            $ssh = $this->connect($server);
 
             foreach ($steps as $i => $step) {
                 $ssh->setTimeout($this->timeout);

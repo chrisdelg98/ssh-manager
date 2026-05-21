@@ -50,6 +50,8 @@ $csrfToken = CsrfGuard::token();
       <span class="terminal-welcome">Conectado a <strong><?= htmlspecialchars($server['host']) ?></strong>. Escribe un comando o elige un template.</span>
     </div>
 
+    <div id="terminal-status" class="terminal-status hidden" aria-live="polite"></div>
+
     <div class="terminal-input-row">
       <span class="terminal-prompt">$</span>
       <input type="text" id="cmd-input" class="terminal-input"
@@ -91,6 +93,8 @@ const SERVER_ID  = <?= (int)$server['id'] ?>;
 const CSRF_TOKEN = <?= json_encode($csrfToken) ?>;
 const TEMPLATES  = <?= json_encode(array_column($templates, null, 'id')) ?>;
 let pendingTemplateId = null;
+let statusTimer = null;
+let lastOutputAt = 0;
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -107,8 +111,51 @@ function appendOutput(html) {
   out.scrollTop = out.scrollHeight;
 }
 
+function appendOutputText(text, cls = 'terminal-ok') {
+  const out = document.getElementById('terminal-output');
+  const line = document.createElement('div');
+  line.className = `terminal-line ${cls}`;
+  line.textContent = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  out.appendChild(line);
+  out.scrollTop = out.scrollHeight;
+}
+
 function clearOutput() {
   document.getElementById('terminal-output').innerHTML = '';
+}
+
+function setStatus(message, state = 'running') {
+  const status = document.getElementById('terminal-status');
+  status.textContent = message;
+  status.dataset.state = state;
+  status.classList.remove('hidden');
+}
+
+function hideStatusLater() {
+  window.setTimeout(() => {
+    document.getElementById('terminal-status').classList.add('hidden');
+  }, 4500);
+}
+
+function setBusy(isBusy) {
+  document.getElementById('btn-exec').disabled = isBusy;
+  document.getElementById('cmd-input').disabled = isBusy;
+}
+
+function startStatusTimer() {
+  stopStatusTimer();
+  lastOutputAt = Date.now();
+  statusTimer = window.setInterval(() => {
+    const seconds = Math.max(0, Math.floor((Date.now() - lastOutputAt) / 1000));
+    setStatus(`Ejecutando... última salida hace ${seconds}s`, 'running');
+  }, 1000);
+}
+
+function stopStatusTimer() {
+  if (statusTimer) {
+    window.clearInterval(statusTimer);
+    statusTimer = null;
+  }
 }
 
 function sendCommand(cmd) {
@@ -123,6 +170,31 @@ function filterCmds(q) {
   });
 }
 
+async function readNdjsonStream(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      onEvent(JSON.parse(line));
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    onEvent(JSON.parse(buffer));
+  }
+}
+
 async function runCmd() {
   const input = document.getElementById('cmd-input');
   const cmd   = input.value.trim();
@@ -130,7 +202,9 @@ async function runCmd() {
 
   appendOutput(`<div class="terminal-line terminal-cmd">$ ${esc(cmd)}</div>`);
   input.value = '';
-  document.getElementById('btn-exec').disabled = true;
+  setBusy(true);
+  setStatus('Preparando ejecución...', 'running');
+  startStatusTimer();
 
   try {
     const fd = new FormData();
@@ -138,24 +212,43 @@ async function runCmd() {
     fd.append('server_id', SERVER_ID);
     fd.append('command', cmd);
     fd.append('action', 'ssh_exec');
+    fd.append('stream', '1');
 
-    const r    = await fetch('?action=ssh_exec', { method: 'POST', body: fd });
-    const data = await r.json();
+    const r = await fetch('?action=ssh_exec', { method: 'POST', body: fd });
 
-    if (data.error) {
-      appendOutput(`<div class="terminal-line terminal-err">ERROR: ${esc(data.error)}</div>`);
-    } else {
-      const cls = data.exit_code === 0 ? 'terminal-ok' : 'terminal-warn';
-      appendOutput(`<div class="terminal-line ${cls}">${esc(data.output || '(sin output)')}</div>`);
-      if (data.exit_code !== 0) {
-        appendOutput(`<div class="terminal-line terminal-warn">Exit code: ${data.exit_code}</div>`);
-      }
+    if (!r.ok || !r.body) {
+      const text = await r.text();
+      throw new Error(text || `HTTP ${r.status}`);
     }
+
+    await readNdjsonStream(r, event => {
+      if (event.type === 'status') {
+        setStatus(event.message, 'running');
+      } else if (event.type === 'output') {
+        lastOutputAt = Date.now();
+        appendOutputText(event.data, 'terminal-ok');
+      } else if (event.type === 'done') {
+        stopStatusTimer();
+        if (event.error) {
+          appendOutputText(`ERROR: ${event.error}`, 'terminal-err');
+          setStatus(event.error, 'error');
+        } else if (event.exit_code === 0) {
+          appendOutputText(`[terminado] exit code 0`, 'terminal-done');
+          setStatus('Comando terminado correctamente.', 'done');
+        } else {
+          appendOutputText(`[terminado] exit code ${event.exit_code}`, 'terminal-warn');
+          setStatus(`Comando terminó con exit code ${event.exit_code}.`, 'warn');
+        }
+      }
+    });
   } catch (e) {
-    appendOutput(`<div class="terminal-line terminal-err">Error de red: ${esc(e.message)}</div>`);
+    stopStatusTimer();
+    appendOutputText(`Error de red/stream: ${e.message}`, 'terminal-err');
+    setStatus('La conexión del navegador al stream se cortó.', 'error');
   }
 
-  document.getElementById('btn-exec').disabled = false;
+  setBusy(false);
+  hideStatusLater();
   document.getElementById('cmd-input').focus();
 }
 
@@ -205,8 +298,9 @@ function closeModal() {
 }
 
 async function confirmTemplate() {
+  const templateId = pendingTemplateId;
   closeModal();
-  if (!pendingTemplateId) return;
+  if (!templateId) return;
 
   const prog = document.getElementById('template-progress');
   prog.classList.remove('hidden');
@@ -216,7 +310,7 @@ async function confirmTemplate() {
   const fd = new FormData();
   fd.append('_csrf', CSRF_TOKEN);
   fd.append('server_id', SERVER_ID);
-  fd.append('template_id', pendingTemplateId);
+  fd.append('template_id', templateId);
 
   try {
     const r    = await fetch('?action=template_run', {method:'POST', body:fd});

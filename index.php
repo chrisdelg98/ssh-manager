@@ -90,6 +90,28 @@ function requireCsrf(): void
     }
 }
 
+function beginStreamResponse(): void
+{
+    @ini_set('output_buffering', 'off');
+    @ini_set('zlib.output_compression', '0');
+    @set_time_limit(0);
+
+    while (ob_get_level() > 0) {
+        @ob_end_flush();
+    }
+
+    header('Content-Type: application/x-ndjson; charset=utf-8');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('X-Accel-Buffering: no');
+}
+
+function streamEvent(array $event): void
+{
+    echo json_encode($event, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+    @ob_flush();
+    flush();
+}
+
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 switch ($action) {
 
@@ -329,6 +351,7 @@ switch ($action) {
         $svc      = getServices($db, $session, $config, $appKeys);
         $serverId = (int)($_POST['server_id'] ?? 0);
         $command  = trim($_POST['command'] ?? '');
+        $stream   = ($_POST['stream'] ?? '') === '1';
 
         if (!$serverId || $command === '') {
             jsonResponse(['error' => 'Missing parameters'], 400);
@@ -337,6 +360,40 @@ switch ($action) {
         $server = $svc['servers']->get($serverId);
         if (!$server) {
             jsonResponse(['error' => 'Server not found'], 404);
+        }
+
+        if ($stream) {
+            beginStreamResponse();
+            ignore_user_abort(true);
+            streamEvent(['type' => 'start', 'command' => $command]);
+
+            // Release the PHP session lock so the rest of the UI does not freeze
+            // while a long SSH command is still running.
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+
+            $result = $svc['ssh']->streamExecute($server, $command, 'streamEvent');
+
+            $status = $result['error'] ? 'error' : ($result['exit_code'] === 0 ? 'success' : 'failure');
+            $detail = json_encode([
+                'command'   => $command,
+                'output'    => $result['output'],
+                'exit_code' => $result['exit_code'],
+                'error'     => $result['error'],
+                'timed_out' => $result['timed_out'] ?? false,
+                'truncated' => $result['truncated'] ?? false,
+            ]);
+            $svc['logger']->log($svc['userId'], Logger::SSH_EXEC, $status, $serverId, $detail);
+
+            streamEvent([
+                'type'      => 'done',
+                'exit_code' => $result['exit_code'],
+                'error'     => $result['error'],
+                'timed_out' => $result['timed_out'] ?? false,
+                'truncated' => $result['truncated'] ?? false,
+            ]);
+            exit;
         }
 
         $result = $svc['ssh']->execute($server, $command);
