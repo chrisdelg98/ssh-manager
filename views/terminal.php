@@ -55,7 +55,7 @@ $csrfToken = CsrfGuard::token();
       <input type="text" id="cmd-input" class="terminal-input"
              placeholder="comando a ejecutar..." autocomplete="off" autocorrect="off"
              autocapitalize="off" spellcheck="false">
-      <button id="btn-exec" class="btn btn-primary" onclick="execCommand()">Ejecutar</button>
+      <button id="btn-exec" class="btn btn-primary" onclick="runCmd()">Ejecutar</button>
       <button class="btn btn-secondary" onclick="clearOutput()">Limpiar</button>
     </div>
 
@@ -106,7 +106,7 @@ function filterCmds(q) {
   });
 }
 
-async function execCommand() {
+async function runCmd() {
   const input = document.getElementById('cmd-input');
   const cmd   = input.value.trim();
   if (!cmd) return;
@@ -122,7 +122,7 @@ async function execCommand() {
     fd.append('command', cmd);
     fd.append('action', 'ssh_exec');
 
-    const r    = await fetch('?action=ssh_exec', {method:'POST', body:fd});
+    const r    = await fetch('?action=ssh_exec', { method: 'POST', body: fd });
     const data = await r.json();
 
     if (data.error) {
@@ -134,7 +134,7 @@ async function execCommand() {
         appendOutput(`<div class="terminal-line terminal-warn">Exit code: ${data.exit_code}</div>`);
       }
     }
-  } catch(e) {
+  } catch (e) {
     appendOutput(`<div class="terminal-line terminal-err">Error de red: ${esc(e.message)}</div>`);
   }
 
@@ -143,7 +143,7 @@ async function execCommand() {
 }
 
 document.getElementById('cmd-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') execCommand();
+  if (e.key === 'Enter') runCmd();
 });
 
 // Template execution

@@ -856,6 +856,260 @@ select option { background: var(--surface); color: var(--text); }
 .snippet-desc { font-size: .82rem; color: var(--muted-strong); margin-bottom: .65rem; }
 .snippet-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: auto; }
 
+/* ── Inline "+ new" reveal for selects ───────────────────────────────────── */
+.inline-new { margin-top: .4rem; }
+.req { color: var(--danger); margin-left: .1rem; }
+
+/* ── Multiselect combobox (Mobiscroll-style) ─────────────────────────────── */
+[hidden] { display: none !important; }
+
+.multiselect {
+  position: relative;
+  width: 100%;
+  font-family: var(--font);
+}
+
+/* The "field" — looks like an input, shows chips + caret */
+.ms-field {
+  display: flex !important;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  min-height: 40px;
+  padding: .35rem .5rem .35rem .65rem;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.ms-field:hover { border-color: var(--border-strong) !important; }
+.multiselect.is-open .ms-field {
+  border-color: var(--accent) !important;
+  background: var(--bg-elev) !important;
+  box-shadow: var(--focus-ring);
+}
+
+.ms-chips {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: .3rem;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.ms-placeholder {
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+.ms-chip {
+  display: inline-flex !important;
+  align-items: center;
+  gap: .4rem;
+  padding: .2rem .55rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 20px;
+  font-size: .76rem;
+  font-weight: 600;
+  user-select: none;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.ms-chip.is-new {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  border-style: dashed;
+  color: var(--text);
+}
+.ms-chip.is-new::before {
+  content: "+";
+  color: var(--accent);
+  font-weight: 700;
+  font-family: var(--mono);
+}
+.ms-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px;
+  border-radius: 50%;
+  opacity: .7;
+  transition: opacity var(--transition), background var(--transition);
+}
+.ms-chip-x:hover {
+  opacity: 1;
+  background: rgba(0,0,0,.25);
+}
+
+.ms-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform var(--transition), color var(--transition);
+}
+.multiselect.is-open .ms-caret {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+/* Dropdown panel */
+.ms-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 30;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+}
+
+/* Search bar at top of dropdown */
+.ms-search {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .55rem .75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.ms-search-icon { color: var(--muted); flex-shrink: 0; }
+.ms-search input {
+  flex: 1 !important;
+  width: auto !important;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text);
+  font-size: .88rem;
+  padding: .15rem 0 !important;
+  outline: none;
+}
+.ms-search input::placeholder { color: var(--muted); }
+
+/* Scrollable options list */
+.ms-options {
+  display: flex !important;
+  flex-direction: column !important;
+  padding: .35rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Each option row */
+.ms-option {
+  display: flex !important;
+  align-items: center;
+  gap: .65rem;
+  padding: .5rem .65rem;
+  border-radius: var(--radius-sm);
+  font-size: .85rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+  position: relative;
+}
+.ms-option:hover { background: var(--surface-2); }
+.ms-option input[type=checkbox] {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0,0,0,0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.ms-option-text {
+  flex: 1;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.ms-option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  color: transparent;
+  background: var(--surface);
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.ms-option.is-checked {
+  background: var(--accent-soft);
+}
+.ms-option.is-checked .ms-option-text {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ms-option.is-checked .ms-option-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+/* "Create new tag" footer row */
+.ms-create {
+  display: flex !important;
+  align-items: center;
+  gap: .55rem;
+  padding: .65rem .75rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: .85rem;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition), color var(--transition);
+}
+.ms-create:hover { background: var(--accent-soft); color: var(--accent); }
+.ms-create-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 4px;
+  font-weight: 700;
+  font-family: var(--mono);
+  line-height: 1;
+}
+.ms-create strong {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+/* Empty state */
+.ms-empty {
+  padding: 1rem .75rem;
+  font-size: .85rem;
+  color: var(--muted);
+  text-align: center;
+  flex-shrink: 0;
+}
+
 /* ── Utilities ───────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .text-muted { color: var(--muted); }

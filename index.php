@@ -588,53 +588,77 @@ switch ($action) {
         break;
 
     case 'snippet_add':
-        $svc   = getServices($db, $session, $config, $appKeys);
-        $error = '';
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            requireCsrf();
-            try {
-                $svc['commands']->create(
-                    trim($_POST['title']),
-                    trim($_POST['command']),
-                    trim($_POST['category']) ?: 'General',
-                    trim($_POST['os_target'] ?? '') ?: null,
-                    trim($_POST['description'] ?? '') ?: null,
-                    trim($_POST['tags'] ?? '') ?: null
-                );
-                header('Location: ?action=snippets');
-                exit;
-            } catch (\Throwable $e) {
-                $error = 'No se pudo guardar el snippet.';
-            }
-        }
-        $editSnippet = null;
-        require __DIR__ . '/views/snippet_form.php';
-        break;
-
     case 'snippet_edit':
-        $svc   = getServices($db, $session, $config, $appKeys);
-        $sid   = (int)($_GET['id'] ?? 0);
-        $error = '';
+        $svc        = getServices($db, $session, $config, $appKeys);
+        $isEditing  = ($action === 'snippet_edit');
+        $sid        = $isEditing ? (int)($_GET['id'] ?? 0) : 0;
+        $error      = '';
+        $cats       = $svc['commands']->getCategories();
+        $osTargets  = $svc['commands']->getOsTargets();
+        $allTags    = $svc['commands']->getTags();
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             requireCsrf();
             try {
-                $svc['commands']->update(
-                    $sid,
-                    trim($_POST['title']),
-                    trim($_POST['command']),
-                    trim($_POST['category']) ?: 'General',
-                    trim($_POST['os_target'] ?? '') ?: null,
-                    trim($_POST['description'] ?? '') ?: null,
-                    trim($_POST['tags'] ?? '') ?: null
-                );
+                // Resolve category (existing id, "__new__" with category_new, or fallback)
+                $catId = null;
+                if (($_POST['category_id'] ?? '') === '__new__') {
+                    $name  = trim($_POST['category_new'] ?? '');
+                    if ($name === '') { throw new \InvalidArgumentException('Escribe el nombre de la nueva categoría.'); }
+                    $catId = $svc['commands']->ensureCategory($name);
+                } elseif (!empty($_POST['category_id'])) {
+                    $catId = (int)$_POST['category_id'];
+                }
+                if (!$catId) {
+                    $catId = $svc['commands']->ensureCategory('General');
+                }
+
+                // Resolve OS target (optional)
+                $osId = null;
+                if (($_POST['os_target_id'] ?? '') === '__new__') {
+                    $name = trim($_POST['os_target_new'] ?? '');
+                    if ($name !== '') $osId = $svc['commands']->ensureOsTarget($name);
+                } elseif (!empty($_POST['os_target_id'])) {
+                    $osId = (int)$_POST['os_target_id'];
+                }
+
+                // Resolve tags (mix of existing ids + free-text new tags)
+                $tagIds = [];
+                foreach (($_POST['tag_ids'] ?? []) as $tid) {
+                    $tid = (int)$tid;
+                    if ($tid > 0) $tagIds[] = $tid;
+                }
+                $newTagsRaw = $_POST['tags_new'] ?? '';
+                foreach (explode(',', $newTagsRaw) as $newTag) {
+                    $name = trim($newTag);
+                    if ($name === '') continue;
+                    $newId = $svc['commands']->ensureTag($name);
+                    if ($newId > 0) $tagIds[] = $newId;
+                }
+                $tagIds = array_values(array_unique($tagIds));
+
+                $title       = trim($_POST['title']);
+                $command     = trim($_POST['command']);
+                $description = trim($_POST['description'] ?? '') ?: null;
+
+                if ($isEditing) {
+                    $svc['commands']->update($sid, $title, $command, $catId, $osId, $description, $tagIds);
+                } else {
+                    $svc['commands']->create($title, $command, $catId, $osId, $description, $tagIds);
+                }
+
                 header('Location: ?action=snippets');
                 exit;
             } catch (\Throwable $e) {
-                $error = 'No se pudo actualizar el snippet.';
+                $error = $e->getMessage() ?: 'No se pudo guardar el snippet.';
             }
         }
-        $editSnippet = $svc['commands']->get($sid);
-        if (!$editSnippet) { header('Location: ?action=snippets'); exit; }
+
+        $editSnippet = $isEditing ? $svc['commands']->get($sid) : null;
+        if ($isEditing && !$editSnippet) {
+            header('Location: ?action=snippets');
+            exit;
+        }
         require __DIR__ . '/views/snippet_form.php';
         break;
 
@@ -693,6 +717,62 @@ switch ($action) {
             $_SESSION['dashboard_ok'] = 'Clave eliminada.';
         }
         header('Location: ?action=keys');
+        exit;
+
+    // ── One-shot tag migration (v3) ──────────────────────────────────────
+    // Splits the legacy comma-separated `command_library.tags` column into
+    // `snippet_tags` + `snippet_tag_links`. Idempotent; safe to re-run.
+    case 'migrate_tags':
+        $rows = $db->query(
+            'SELECT id, tags FROM command_library WHERE tags IS NOT NULL AND tags <> ""'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $svc = getServices($db, $session, $config, $appKeys);
+
+        $insertedTags = 0;
+        $insertedLinks = 0;
+        $skipped = 0;
+        $tagCache = [];
+
+        $insTag  = $db->prepare('INSERT IGNORE INTO snippet_tags (name) VALUES (?)');
+        $selTag  = $db->prepare('SELECT id FROM snippet_tags WHERE name = ? LIMIT 1');
+        $insLink = $db->prepare('INSERT IGNORE INTO snippet_tag_links (snippet_id, tag_id) VALUES (?, ?)');
+
+        try {
+            $db->beginTransaction();
+            foreach ($rows as $row) {
+                $snipId = (int)$row['id'];
+                foreach (explode(',', $row['tags']) as $raw) {
+                    $name = strtolower(trim($raw));
+                    if ($name === '') continue;
+                    if (mb_strlen($name) > 50) $name = mb_substr($name, 0, 50);
+
+                    if (!isset($tagCache[$name])) {
+                        $insTag->execute([$name]);
+                        if ((int)$db->lastInsertId() > 0) $insertedTags++;
+                        $selTag->execute([$name]);
+                        $tagCache[$name] = (int)$selTag->fetchColumn();
+                    }
+                    $insLink->execute([$snipId, $tagCache[$name]]);
+                    if ($insLink->rowCount() > 0) $insertedLinks++;
+                    else                          $skipped++;
+                }
+            }
+            $db->commit();
+            $svc['logger']->log($svc['userId'], 'TAG_MIGRATION', 'success', null,
+                "Migrated tags: {$insertedTags} new, {$insertedLinks} links, {$skipped} skipped");
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            $_SESSION['settings_error'] = 'Error en migración: ' . $e->getMessage();
+            header('Location: ?action=settings');
+            exit;
+        }
+
+        $_SESSION['settings_ok'] = sprintf(
+            'Migración completa: %d tags nuevas, %d asociaciones, %d ya existían.',
+            $insertedTags, $insertedLinks, $skipped
+        );
+        header('Location: ?action=settings');
         exit;
 
     case 'settings_theme':

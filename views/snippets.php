@@ -23,8 +23,9 @@ $cat = $_GET['cat'] ?? '';
   <select name="cat">
     <option value="">Todas las categorías</option>
     <?php foreach ($cats as $c): ?>
-      <option value="<?= htmlspecialchars($c) ?>" <?= $cat === $c ? 'selected' : '' ?>>
-        <?= htmlspecialchars($c) ?>
+      <?php $name = is_array($c) ? $c['name'] : $c; ?>
+      <option value="<?= htmlspecialchars($name) ?>" <?= $cat === $name ? 'selected' : '' ?>>
+        <?= htmlspecialchars($name) ?>
       </option>
     <?php endforeach; ?>
   </select>
