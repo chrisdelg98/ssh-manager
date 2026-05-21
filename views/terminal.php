@@ -65,12 +65,23 @@ $csrfToken = CsrfGuard::token();
 
 <!-- Template confirmation modal -->
 <div id="tmpl-modal" class="modal hidden">
-  <div class="modal-box">
-    <h3>Ejecutar Template: <span id="tmpl-modal-name"></span></h3>
-    <p>Se ejecutará en <strong><?= htmlspecialchars($server['name']) ?></strong>. ¿Confirmar?</p>
+  <div class="modal-box" style="max-width:680px">
+    <h3>Ejecutar Template: <span id="tmpl-modal-name" class="text-accent"></span></h3>
+    <p class="tmpl-modal-meta">
+      Servidor:&nbsp;<strong><?= htmlspecialchars($server['name']) ?></strong>
+      <span class="text-muted">·</span>
+      <span id="tmpl-modal-count"></span>
+      <span id="tmpl-modal-desc"></span>
+    </p>
+
+    <div class="tmpl-steps-wrap">
+      <div class="tmpl-steps-label">Comandos que se ejecutarán en orden:</div>
+      <ol id="tmpl-modal-steps" class="tmpl-steps"></ol>
+    </div>
+
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="confirmTemplate()">Confirmar</button>
-      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmTemplate()">▶ Ejecutar</button>
     </div>
   </div>
 </div>
@@ -78,10 +89,16 @@ $csrfToken = CsrfGuard::token();
 <script>
 const SERVER_ID  = <?= (int)$server['id'] ?>;
 const CSRF_TOKEN = <?= json_encode($csrfToken) ?>;
+const TEMPLATES  = <?= json_encode(array_column($templates, null, 'id')) ?>;
 let pendingTemplateId = null;
 
 function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+function escInline(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function appendOutput(html) {
@@ -150,6 +167,35 @@ document.getElementById('cmd-input').addEventListener('keydown', e => {
 function runTemplate(id, name) {
   pendingTemplateId = id;
   document.getElementById('tmpl-modal-name').textContent = name;
+
+  const tpl   = TEMPLATES[id] || {};
+  const steps = Array.isArray(tpl.steps) ? tpl.steps : [];
+
+  // Counter + optional description
+  document.getElementById('tmpl-modal-count').innerHTML =
+    `<strong>${steps.length}</strong> paso${steps.length === 1 ? '' : 's'}`;
+  const descEl = document.getElementById('tmpl-modal-desc');
+  descEl.innerHTML = tpl.description
+    ? `<span class="text-muted">·</span> ${escInline(tpl.description)}`
+    : '';
+
+  // Step list
+  const ol = document.getElementById('tmpl-modal-steps');
+  ol.innerHTML = steps.map(s => {
+    const stop = s.stop_on_error
+      ? '<span class="tmpl-step-flag" title="Detiene la ejecución si este paso falla">stop-on-error</span>'
+      : '';
+    const desc = s.description
+      ? `<div class="tmpl-step-desc">${escInline(s.description)}</div>`
+      : '';
+    return `
+      <li class="tmpl-step">
+        <code class="tmpl-step-cmd">${escInline(s.command)}</code>
+        ${desc}
+        ${stop}
+      </li>`;
+  }).join('') || '<li class="tmpl-step text-muted">Sin pasos definidos.</li>';
+
   document.getElementById('tmpl-modal').classList.remove('hidden');
 }
 
