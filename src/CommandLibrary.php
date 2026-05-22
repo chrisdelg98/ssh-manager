@@ -27,7 +27,7 @@ class CommandLibrary
     /**
      * Search snippets joining lookup tables for display.
      */
-    public function search(string $keyword = '', string $category = '', string $osTarget = ''): array
+    public function search(string $keyword = '', string $category = '', string $osTarget = '', string $tag = ''): array
     {
         $where  = ['1=1'];
         $params = [];
@@ -47,6 +47,12 @@ class CommandLibrary
         if ($osTarget !== '') {
             $where[]  = '(sot.name = ? OR sot.name IS NULL OR sot.name = "General")';
             $params[] = $osTarget;
+        }
+        if ($tag !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM snippet_tag_links stl3
+                                JOIN snippet_tags st3 ON st3.id = stl3.tag_id
+                                WHERE stl3.snippet_id = cl.id AND st3.name = ?)';
+            $params[] = strtolower(trim($tag));
         }
 
         $whereSQL = implode(' AND ', $where);

@@ -443,8 +443,11 @@ switch ($action) {
         $search = trim($_GET['q'] ?? '');
         $cat    = $_GET['cat'] ?? '';
         $os     = $_GET['os'] ?? '';
-        $cmds   = $svc['commands']->search($search, $cat, $os);
+        $tag    = $_GET['tag'] ?? '';
+        $cmds   = $svc['commands']->search($search, $cat, $os, $tag);
         $cats   = $svc['commands']->getCategories();
+        $osTargets = $svc['commands']->getOsTargets();
+        $allTags = $svc['commands']->getTags();
         require __DIR__ . '/views/commands.php';
         break;
 
@@ -455,15 +458,22 @@ switch ($action) {
             $svc['commands']->create(
                 trim($_POST['title']),
                 trim($_POST['command']),
-                trim($_POST['category']),
-                trim($_POST['os_target'] ?? '') ?: null,
+                $svc['commands']->ensureCategory(trim($_POST['category'] ?? 'General')),
+                trim($_POST['os_target'] ?? '') !== '' ? $svc['commands']->ensureOsTarget(trim($_POST['os_target'])) : null,
                 trim($_POST['description'] ?? '') ?: null,
-                trim($_POST['tags'] ?? '') ?: null
+                array_values(array_filter(array_map(
+                    fn($tag) => $svc['commands']->ensureTag($tag),
+                    explode(',', $_POST['tags'] ?? '')
+                )))
             );
             header('Location: ?action=commands');
             exit;
         }
         $editCmd = null;
+        $cmds    = $svc['commands']->getAll();
+        $cats    = $svc['commands']->getCategories();
+        $osTargets = $svc['commands']->getOsTargets();
+        $allTags = $svc['commands']->getTags();
         require __DIR__ . '/views/commands.php';
         break;
 
@@ -476,10 +486,13 @@ switch ($action) {
                 $cmdId,
                 trim($_POST['title']),
                 trim($_POST['command']),
-                trim($_POST['category']),
-                trim($_POST['os_target'] ?? '') ?: null,
+                $svc['commands']->ensureCategory(trim($_POST['category'] ?? 'General')),
+                trim($_POST['os_target'] ?? '') !== '' ? $svc['commands']->ensureOsTarget(trim($_POST['os_target'])) : null,
                 trim($_POST['description'] ?? '') ?: null,
-                trim($_POST['tags'] ?? '') ?: null
+                array_values(array_filter(array_map(
+                    fn($tag) => $svc['commands']->ensureTag($tag),
+                    explode(',', $_POST['tags'] ?? '')
+                )))
             );
             header('Location: ?action=commands');
             exit;
@@ -487,6 +500,8 @@ switch ($action) {
         $editCmd = $svc['commands']->get($cmdId);
         $cmds    = $svc['commands']->getAll();
         $cats    = $svc['commands']->getCategories();
+        $osTargets = $svc['commands']->getOsTargets();
+        $allTags = $svc['commands']->getTags();
         require __DIR__ . '/views/commands.php';
         break;
 

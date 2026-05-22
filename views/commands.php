@@ -5,7 +5,10 @@ include __DIR__ . '/layout.php';
 $search  = htmlspecialchars($_GET['q']   ?? '');
 $selCat  = htmlspecialchars($_GET['cat'] ?? '');
 $selOs   = htmlspecialchars($_GET['os']  ?? '');
-$osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other'];
+$selTag  = htmlspecialchars($_GET['tag'] ?? '');
+$catNames = array_map(fn($c) => $c['name'], $cats ?? []);
+$osOptions = array_map(fn($o) => $o['name'], $osTargets ?? []);
+$tagNames = array_map(fn($t) => $t['name'], $allTags ?? []);
 ?>
 
 <div class="page-header">
@@ -32,7 +35,7 @@ $osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other']
                value="<?= htmlspecialchars($editCmd['category'] ?? '') ?>"
                placeholder="Disco">
         <datalist id="cat-list">
-          <?php foreach ($cats ?? [] as $c): ?>
+          <?php foreach ($catNames as $c): ?>
           <option value="<?= htmlspecialchars($c) ?>">
           <?php endforeach; ?>
           <option value="Disco"><option value="Actualizaciones"><option value="Servicios">
@@ -81,7 +84,7 @@ $osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other']
   <input type="text" name="q" value="<?= $search ?>" placeholder="Buscar comando..." class="input-search">
   <select name="cat">
     <option value="">Todas las categorías</option>
-    <?php foreach ($cats ?? [] as $c): ?>
+    <?php foreach ($catNames as $c): ?>
     <option value="<?= htmlspecialchars($c) ?>" <?= $selCat === htmlspecialchars($c) ? 'selected' : '' ?>>
       <?= htmlspecialchars($c) ?>
     </option>
@@ -91,6 +94,12 @@ $osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other']
     <option value="">Todos los OS</option>
     <?php foreach ($osOptions as $o): ?>
     <option value="<?= $o ?>" <?= $selOs === $o ? 'selected' : '' ?>><?= $o ?></option>
+    <?php endforeach; ?>
+  </select>
+  <select name="tag">
+    <option value="">Todas las etiquetas</option>
+    <?php foreach ($tagNames as $t): ?>
+    <option value="<?= htmlspecialchars($t) ?>" <?= $selTag === htmlspecialchars($t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
     <?php endforeach; ?>
   </select>
   <button type="submit" class="btn btn-secondary">Buscar</button>
@@ -105,13 +114,14 @@ $osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other']
       <th>Comando</th>
       <th>Categoría</th>
       <th>OS</th>
+      <th>Tags</th>
       <th>Usos</th>
       <th>Acciones</th>
     </tr>
   </thead>
   <tbody>
     <?php if (empty($cmds)): ?>
-    <tr><td colspan="6" style="text-align:center;color:#888">No hay comandos<?= $search ? ' para esa búsqueda' : '' ?>.</td></tr>
+    <tr><td colspan="7" style="text-align:center;color:#888">No hay comandos<?= $search ? ' para esa búsqueda' : '' ?>.</td></tr>
     <?php else: ?>
     <?php foreach ($cmds as $c): ?>
     <tr>
@@ -126,6 +136,7 @@ $osOptions = ['General','AlmaLinux','CentOS','Ubuntu','Debian','cPanel','Other']
       </td>
       <td><span class="badge"><?= htmlspecialchars($c['category']) ?></span></td>
       <td><?= htmlspecialchars($c['os_target'] ?? 'General') ?></td>
+      <td><small class="text-muted"><?= htmlspecialchars($c['tags'] ?? '') ?></small></td>
       <td><?= (int)$c['usage_count'] ?></td>
       <td class="actions-cell">
         <button class="btn btn-sm btn-secondary"

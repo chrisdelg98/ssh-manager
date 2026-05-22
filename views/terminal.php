@@ -32,15 +32,43 @@ $csrfToken = CsrfGuard::token();
     </div>
     <div class="sidebar-section">
       <h4>Comandos rápidos <a href="?action=commands" style="font-size:.8em">ver todos</a></h4>
-      <input type="text" id="cmd-filter" placeholder="Buscar..." oninput="filterCmds(this.value)" class="input-sm">
+      <input type="text" id="cmd-filter" placeholder="Buscar nombre, descripción, tag..." oninput="filterCmds()" class="input-sm">
+      <select id="cmd-cat-filter" class="input-sm" onchange="filterCmds()" aria-label="Filtrar por categoría">
+        <option value="">Todas las categorías</option>
+      </select>
+      <select id="cmd-os-filter" class="input-sm" onchange="filterCmds()" aria-label="Filtrar por tipo">
+        <option value="">Todos los tipos</option>
+      </select>
+      <select id="cmd-tag-filter" class="input-sm" onchange="filterCmds()" aria-label="Filtrar por etiqueta">
+        <option value="">Todas las etiquetas</option>
+      </select>
       <div id="cmd-list">
         <?php foreach ($commands as $c): ?>
-        <button class="cmd-btn" data-title="<?= htmlspecialchars(strtolower($c['title'])) ?>"
+        <?php
+          $haystack = strtolower(trim(
+              ($c['title'] ?? '') . ' ' .
+              ($c['command'] ?? '') . ' ' .
+              ($c['category'] ?? '') . ' ' .
+              ($c['os_target'] ?? '') . ' ' .
+              ($c['description'] ?? '') . ' ' .
+              ($c['tags'] ?? '')
+          ));
+        ?>
+        <button class="cmd-btn"
+                data-search="<?= htmlspecialchars($haystack, ENT_QUOTES) ?>"
+                data-category="<?= htmlspecialchars($c['category'] ?? 'General', ENT_QUOTES) ?>"
+                data-os="<?= htmlspecialchars($c['os_target'] ?? 'General', ENT_QUOTES) ?>"
+                data-tags="<?= htmlspecialchars($c['tags'] ?? '', ENT_QUOTES) ?>"
+                title="<?= htmlspecialchars(($c['description'] ?? '') ?: ($c['command'] ?? ''), ENT_QUOTES) ?>"
                 onclick="sendCommand(<?= htmlspecialchars(json_encode($c['command']), ENT_QUOTES) ?>)">
           <?= htmlspecialchars($c['title']) ?>
+          <?php if (!empty($c['os_target']) && $c['os_target'] !== 'General'): ?>
+          <span class="os-badge"><?= htmlspecialchars($c['os_target']) ?></span>
+          <?php endif; ?>
         </button>
         <?php endforeach; ?>
       </div>
+      <div id="cmd-empty" class="text-muted hidden" style="font-size:.8rem;margin-top:.5rem">Sin coincidencias.</div>
     </div>
   </aside>
 
@@ -216,11 +244,63 @@ function browseCommandHistory(direction) {
   }, 0);
 }
 
-function filterCmds(q) {
-  const lq = q.toLowerCase();
+function normalizeFilterValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function initCommandFilters() {
+  const cats = new Set();
+  const osTargets = new Set();
+  const tags = new Set();
+
   document.querySelectorAll('#cmd-list .cmd-btn').forEach(btn => {
-    btn.style.display = btn.dataset.title.includes(lq) ? '' : 'none';
+    if (btn.dataset.category) cats.add(btn.dataset.category);
+    if (btn.dataset.os) osTargets.add(btn.dataset.os);
+    String(btn.dataset.tags || '').split(',').forEach(tag => {
+      const clean = tag.trim();
+      if (clean) tags.add(clean);
+    });
   });
+
+  fillFilterSelect('cmd-cat-filter', cats);
+  fillFilterSelect('cmd-os-filter', osTargets);
+  fillFilterSelect('cmd-tag-filter', tags);
+}
+
+function fillFilterSelect(id, values) {
+  const select = document.getElementById(id);
+  const first = select.options[0];
+  select.innerHTML = '';
+  select.appendChild(first);
+
+  Array.from(values).sort((a, b) => a.localeCompare(b)).forEach(value => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    select.appendChild(opt);
+  });
+}
+
+function filterCmds() {
+  const q = normalizeFilterValue(document.getElementById('cmd-filter').value);
+  const cat = document.getElementById('cmd-cat-filter').value;
+  const os = document.getElementById('cmd-os-filter').value;
+  const tag = normalizeFilterValue(document.getElementById('cmd-tag-filter').value);
+  let visible = 0;
+
+  document.querySelectorAll('#cmd-list .cmd-btn').forEach(btn => {
+    const tags = String(btn.dataset.tags || '').split(',').map(normalizeFilterValue);
+    const matches =
+      (!q || normalizeFilterValue(btn.dataset.search).includes(q)) &&
+      (!cat || btn.dataset.category === cat) &&
+      (!os || btn.dataset.os === os) &&
+      (!tag || tags.includes(tag));
+
+    btn.style.display = matches ? '' : 'none';
+    if (matches) visible++;
+  });
+
+  document.getElementById('cmd-empty').classList.toggle('hidden', visible !== 0);
 }
 
 async function readNdjsonStream(response, onEvent) {
@@ -320,6 +400,7 @@ document.getElementById('cmd-input').addEventListener('keydown', e => {
     browseCommandHistory(1);
   }
 });
+initCommandFilters();
 
 // Template execution
 function runTemplate(id, name) {
