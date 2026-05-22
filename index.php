@@ -381,6 +381,7 @@ switch ($action) {
                 'output'    => $result['output'],
                 'exit_code' => $result['exit_code'],
                 'error'     => $result['error'],
+                'warning'   => $result['warning'] ?? null,
                 'timed_out' => $result['timed_out'] ?? false,
                 'truncated' => $result['truncated'] ?? false,
             ]);
@@ -390,6 +391,7 @@ switch ($action) {
                 'type'      => 'done',
                 'exit_code' => $result['exit_code'],
                 'error'     => $result['error'],
+                'warning'   => $result['warning'] ?? null,
                 'timed_out' => $result['timed_out'] ?? false,
                 'truncated' => $result['truncated'] ?? false,
             ]);

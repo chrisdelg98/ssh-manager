@@ -141,8 +141,14 @@ class SSHManager
             $timedOut = method_exists($ssh, 'isTimeout') && $ssh->isTimeout();
 
             $error = null;
+            $warning = null;
             if ($timedOut) {
                 $error = "Timeout: no hubo salida durante {$this->timeout}s. Puede que el comando siga esperando confirmación/input o se haya quedado detenido.";
+            }
+
+            if ($timedOut && $captured !== '') {
+                $error = null;
+                $warning = "Sin salida durante {$this->timeout}s. Se cerro el stream local, pero el comando ya habia devuelto salida; revisa el ultimo mensaje o valida el estado en el servidor.";
             }
 
             if ($truncated) {
@@ -153,6 +159,7 @@ class SSHManager
                 'output'    => $captured,
                 'exit_code' => $exitCode === null ? ($timedOut ? -1 : 0) : (int)$exitCode,
                 'error'     => $error,
+                'warning'   => $warning,
                 'timed_out' => $timedOut,
                 'truncated' => $truncated,
             ];
@@ -162,6 +169,7 @@ class SSHManager
                 'output'    => $captured,
                 'exit_code' => -1,
                 'error'     => 'SSH error: ' . $e->getMessage(),
+                'warning'   => null,
                 'timed_out' => false,
                 'truncated' => $truncated,
             ];

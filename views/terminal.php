@@ -95,6 +95,11 @@ const TEMPLATES  = <?= json_encode(array_column($templates, null, 'id')) ?>;
 let pendingTemplateId = null;
 let statusTimer = null;
 let lastOutputAt = 0;
+const COMMAND_HISTORY_KEY = `sshmgr:terminal-history:${SERVER_ID}`;
+const COMMAND_HISTORY_LIMIT = 80;
+let commandHistory = loadCommandHistory();
+let historyCursor = commandHistory.length;
+let historyDraft = '';
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -163,6 +168,54 @@ function sendCommand(cmd) {
   document.getElementById('cmd-input').focus();
 }
 
+function loadCommandHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COMMAND_HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' && v.trim() !== '') : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveCommandHistory() {
+  try {
+    localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(commandHistory.slice(-COMMAND_HISTORY_LIMIT)));
+  } catch (_) {}
+}
+
+function rememberCommand(cmd) {
+  const clean = String(cmd || '').trim();
+  if (!clean) return;
+
+  if (commandHistory[commandHistory.length - 1] !== clean) {
+    commandHistory.push(clean);
+  }
+
+  if (commandHistory.length > COMMAND_HISTORY_LIMIT) {
+    commandHistory = commandHistory.slice(-COMMAND_HISTORY_LIMIT);
+  }
+
+  saveCommandHistory();
+  historyCursor = commandHistory.length;
+  historyDraft = '';
+}
+
+function browseCommandHistory(direction) {
+  if (commandHistory.length === 0) return;
+
+  const input = document.getElementById('cmd-input');
+  if (historyCursor === commandHistory.length) {
+    historyDraft = input.value;
+  }
+
+  historyCursor = Math.max(0, Math.min(commandHistory.length, historyCursor + direction));
+  input.value = historyCursor === commandHistory.length ? historyDraft : commandHistory[historyCursor];
+
+  window.setTimeout(() => {
+    input.selectionStart = input.selectionEnd = input.value.length;
+  }, 0);
+}
+
 function filterCmds(q) {
   const lq = q.toLowerCase();
   document.querySelectorAll('#cmd-list .cmd-btn').forEach(btn => {
@@ -200,6 +253,7 @@ async function runCmd() {
   const cmd   = input.value.trim();
   if (!cmd) return;
 
+  rememberCommand(cmd);
   appendOutput(`<div class="terminal-line terminal-cmd">$ ${esc(cmd)}</div>`);
   input.value = '';
   setBusy(true);
@@ -232,6 +286,9 @@ async function runCmd() {
         if (event.error) {
           appendOutputText(`ERROR: ${event.error}`, 'terminal-err');
           setStatus(event.error, 'error');
+        } else if (event.warning) {
+          appendOutputText(`AVISO: ${event.warning}`, 'terminal-warn');
+          setStatus(event.warning, 'warn');
         } else if (event.exit_code === 0) {
           appendOutputText(`[terminado] exit code 0`, 'terminal-done');
           setStatus('Comando terminado correctamente.', 'done');
@@ -253,7 +310,15 @@ async function runCmd() {
 }
 
 document.getElementById('cmd-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') runCmd();
+  if (e.key === 'Enter') {
+    runCmd();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    browseCommandHistory(-1);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    browseCommandHistory(1);
+  }
 });
 
 // Template execution
