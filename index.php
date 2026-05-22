@@ -66,7 +66,7 @@ function getServices(PDO $db, SessionManager $session, array $config, array $app
         'encKey'   => $encKey,
         'userId'   => $userId,
         'servers'  => new ServerManager($db, $encKey),
-        'ssh'      => new SSHManager($config['app']['ssh_timeout'], $config['app']['ssh_output_limit']),
+        'ssh'      => new SSHManager($config['app']['ssh_timeout'], $config['app']['ssh_output_limit'], $config['app']['ssh_command_timeout']),
         'commands' => new CommandLibrary($db),
         'templates'=> new TemplateManager($db),
         'logger'   => $logger,

@@ -9,12 +9,14 @@ use phpseclib3\Crypt\PublicKeyLoader;
 class SSHManager
 {
     private int    $timeout;
+    private int    $commandTimeout;
     private int    $outputLimit;
 
-    public function __construct(int $timeout = 15, int $outputLimit = 51200)
+    public function __construct(int $timeout = 15, int $outputLimit = 51200, int $commandTimeout = 600)
     {
-        $this->timeout     = $timeout;
-        $this->outputLimit = $outputLimit;
+        $this->timeout        = $timeout;
+        $this->commandTimeout = max($timeout, $commandTimeout);
+        $this->outputLimit    = $outputLimit;
     }
 
     /**
@@ -62,7 +64,7 @@ class SSHManager
 
         try {
             $ssh = $this->connect($server);
-            $ssh->setTimeout($this->timeout);
+            $ssh->setTimeout($this->commandTimeout);
 
             $output = $ssh->exec($command);
             $exitCode = $ssh->getExitStatus();
@@ -112,10 +114,10 @@ class SSHManager
         try {
             $onEvent(['type' => 'status', 'message' => 'Conectando por SSH...']);
             $ssh = $this->connect($server);
-            $ssh->setTimeout($this->timeout);
+            $ssh->setTimeout($this->commandTimeout);
             $onEvent([
                 'type'    => 'status',
-                'message' => "Ejecutando. Si no hay salida por {$this->timeout}s se marcará como timeout.",
+                'message' => "Ejecutando. Si no hay salida por {$this->commandTimeout}s se marcara como timeout.",
             ]);
 
             $ssh->exec($command, function (string $chunk) use (&$captured, &$truncated, $onEvent): void {
@@ -143,12 +145,12 @@ class SSHManager
             $error = null;
             $warning = null;
             if ($timedOut) {
-                $error = "Timeout: no hubo salida durante {$this->timeout}s. Puede que el comando siga esperando confirmación/input o se haya quedado detenido.";
+                $error = "Timeout: no hubo salida durante {$this->commandTimeout}s. Puede que el comando siga esperando confirmacion/input o se haya quedado detenido.";
             }
 
             if ($timedOut && $captured !== '') {
                 $error = null;
-                $warning = "Sin salida durante {$this->timeout}s. Se cerro el stream local, pero el comando ya habia devuelto salida; revisa el ultimo mensaje o valida el estado en el servidor.";
+                $warning = "Sin salida durante {$this->commandTimeout}s. Se cerro el stream local, pero el comando ya habia devuelto salida; revisa el ultimo mensaje o valida el estado en el servidor.";
             }
 
             if ($truncated) {
@@ -198,7 +200,7 @@ class SSHManager
             $ssh = $this->connect($server);
 
             foreach ($steps as $i => $step) {
-                $ssh->setTimeout($this->timeout);
+                $ssh->setTimeout($this->commandTimeout);
                 $output   = $ssh->exec($step['command']);
                 $exitCode = $ssh->getExitStatus();
 

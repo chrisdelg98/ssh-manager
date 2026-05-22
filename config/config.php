@@ -26,6 +26,7 @@ return [
         'lockout_minutes'    => \App\Env::int('LOCKOUT_MINUTES', 15),
         'log_retention_days' => \App\Env::int('LOG_RETENTION_DAYS', 90),
         'ssh_timeout'        => \App\Env::int('SSH_TIMEOUT', 15),
+        'ssh_command_timeout'=> \App\Env::int('SSH_COMMAND_TIMEOUT', 600),
         'ssh_output_limit'   => \App\Env::int('SSH_OUTPUT_LIMIT', 51200),
     ],
     'ip_allowlist' => \App\Env::arrayCsv('IP_ALLOWLIST'),
