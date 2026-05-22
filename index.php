@@ -16,6 +16,7 @@ use App\CommandLibrary;
 use App\TemplateManager;
 use App\Logger;
 use App\SshKeyManager;
+use App\JobStore;
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 $config = require __DIR__ . '/config/config.php';
@@ -365,6 +366,10 @@ switch ($action) {
         if ($stream) {
             beginStreamResponse();
             ignore_user_abort(true);
+
+            $jobs = new JobStore($svc['userId']);
+            $jobs->start($serverId, $command);
+
             streamEvent(['type' => 'start', 'command' => $command]);
 
             // Release the PHP session lock so the rest of the UI does not freeze
@@ -373,7 +378,17 @@ switch ($action) {
                 session_write_close();
             }
 
-            $result = $svc['ssh']->streamExecute($server, $command, 'streamEvent');
+            $result = $svc['ssh']->streamExecute(
+                $server,
+                $command,
+                function (array $event) use ($jobs, $serverId): void {
+                    streamEvent($event);
+                    // Persist output and status events so the browser can reconnect
+                    if ($event['type'] === 'output' || $event['type'] === 'status') {
+                        $jobs->appendEvent($serverId, $event);
+                    }
+                }
+            );
 
             $status = $result['error'] ? 'error' : ($result['exit_code'] === 0 ? 'success' : 'failure');
             $detail = json_encode([
@@ -387,14 +402,17 @@ switch ($action) {
             ]);
             $svc['logger']->log($svc['userId'], Logger::SSH_EXEC, $status, $serverId, $detail);
 
-            streamEvent([
+            $doneEvent = [
                 'type'      => 'done',
                 'exit_code' => $result['exit_code'],
                 'error'     => $result['error'],
                 'warning'   => $result['warning'] ?? null,
                 'timed_out' => $result['timed_out'] ?? false,
                 'truncated' => $result['truncated'] ?? false,
-            ]);
+            ];
+            streamEvent($doneEvent);
+            $jobs->appendEvent($serverId, $doneEvent);
+            $jobs->finish($serverId, $status);
             exit;
         }
 
@@ -410,6 +428,36 @@ switch ($action) {
         $svc['logger']->log($svc['userId'], Logger::SSH_EXEC, $status, $serverId, $detail);
 
         jsonResponse($result);
+
+    // ── Job status / output replay (for reconnect after page refresh) ────
+    case 'job_check':
+        $svc      = getServices($db, $session, $config, $appKeys);
+        $serverId = (int)($_GET['server_id'] ?? 0);
+        if (!$serverId) jsonResponse(['job' => null]);
+
+        $jobs = new JobStore($svc['userId']);
+        $job  = $jobs->get($serverId);
+        if (!$job) jsonResponse(['job' => null]);
+
+        $job['elapsed']      = time() - (int)($job['started_at'] ?? 0);
+        $job['output_lines'] = $jobs->getOutput($serverId)['total'];
+        jsonResponse(['job' => $job]);
+
+    case 'job_output':
+        $svc      = getServices($db, $session, $config, $appKeys);
+        $serverId = (int)($_GET['server_id'] ?? 0);
+        $offset   = max(0, (int)($_GET['offset'] ?? 0));
+        if (!$serverId) jsonResponse(['error' => 'Missing server_id'], 400);
+
+        $jobs   = new JobStore($svc['userId']);
+        $job    = $jobs->get($serverId);
+        $result = $jobs->getOutput($serverId, $offset);
+
+        jsonResponse([
+            'lines'  => $result['lines'],
+            'total'  => $result['total'],
+            'status' => $job['status'] ?? 'unknown',
+        ]);
 
     case 'template_run':
         requireCsrf();

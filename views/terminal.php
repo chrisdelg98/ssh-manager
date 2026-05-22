@@ -15,6 +15,18 @@ $csrfToken = CsrfGuard::token();
   <a href="?action=dashboard" class="btn btn-secondary">← Servidores</a>
 </div>
 
+<div id="job-banner" class="job-banner hidden">
+  <div class="job-banner-info">
+    <span id="job-banner-label" class="job-banner-label"></span>
+    <code id="job-banner-cmd" class="job-banner-cmd"></code>
+    <span id="job-banner-elapsed" class="job-banner-elapsed"></span>
+  </div>
+  <div class="job-banner-actions">
+    <button class="btn btn-primary" onclick="reconnectJob()">Ver output</button>
+    <button class="btn btn-ghost" onclick="dismissJobBanner()">Ignorar</button>
+  </div>
+</div>
+
 <div class="terminal-layout">
 
   <!-- Sidebar de comandos rápidos -->
@@ -86,6 +98,7 @@ $csrfToken = CsrfGuard::token();
              placeholder="comando a ejecutar..." autocomplete="off" autocorrect="off"
              autocapitalize="off" spellcheck="false">
       <button id="btn-exec" class="btn btn-primary" onclick="runCmd()">Ejecutar</button>
+      <button id="btn-stream-disconnect" class="btn btn-secondary hidden" onclick="disconnectStream()" title="Cierra la conexión del navegador — el comando sigue ejecutándose en el servidor">Desconectar</button>
       <button class="btn btn-secondary" onclick="clearOutput()">Limpiar</button>
     </div>
 
@@ -123,6 +136,7 @@ const TEMPLATES  = <?= json_encode(array_column($templates, null, 'id')) ?>;
 let pendingTemplateId = null;
 let statusTimer = null;
 let lastOutputAt = 0;
+let streamAbort = null;
 const COMMAND_HISTORY_KEY = `sshmgr:terminal-history:${SERVER_ID}`;
 const COMMAND_HISTORY_LIMIT = 80;
 let commandHistory = loadCommandHistory();
@@ -173,6 +187,16 @@ function hideStatusLater() {
 function setBusy(isBusy) {
   document.getElementById('btn-exec').disabled = isBusy;
   document.getElementById('cmd-input').disabled = isBusy;
+  if (!isBusy) {
+    document.getElementById('btn-stream-disconnect').classList.add('hidden');
+  }
+}
+
+function disconnectStream() {
+  if (streamAbort) {
+    streamAbort.abort();
+    streamAbort = null;
+  }
 }
 
 function startStatusTimer() {
@@ -180,7 +204,21 @@ function startStatusTimer() {
   lastOutputAt = Date.now();
   statusTimer = window.setInterval(() => {
     const seconds = Math.max(0, Math.floor((Date.now() - lastOutputAt) / 1000));
-    setStatus(`Ejecutando... última salida hace ${seconds}s`, 'running');
+
+    let msg;
+    if (seconds < 30) {
+      msg = `Ejecutando... última salida hace ${seconds}s`;
+    } else if (seconds < 120) {
+      msg = `Ejecutando... sin salida hace ${seconds}s — normal en comandos con procesamiento interno`;
+    } else {
+      msg = `El comando sigue ejecutándose en el servidor. Sin nueva salida hace ${seconds}s. Puedes desconectar el stream — el comando NO se cancela.`;
+    }
+    setStatus(msg, 'running');
+
+    const btnDisconnect = document.getElementById('btn-stream-disconnect');
+    if (btnDisconnect) {
+      btnDisconnect.classList.toggle('hidden', seconds < 30);
+    }
   }, 1000);
 }
 
@@ -340,6 +378,8 @@ async function runCmd() {
   setStatus('Preparando ejecución...', 'running');
   startStatusTimer();
 
+  streamAbort = new AbortController();
+
   try {
     const fd = new FormData();
     fd.append('_csrf', CSRF_TOKEN);
@@ -348,7 +388,7 @@ async function runCmd() {
     fd.append('action', 'ssh_exec');
     fd.append('stream', '1');
 
-    const r = await fetch('?action=ssh_exec', { method: 'POST', body: fd });
+    const r = await fetch('?action=ssh_exec', { method: 'POST', body: fd, signal: streamAbort.signal });
 
     if (!r.ok || !r.body) {
       const text = await r.text();
@@ -380,9 +420,16 @@ async function runCmd() {
     });
   } catch (e) {
     stopStatusTimer();
-    appendOutputText(`Error de red/stream: ${e.message}`, 'terminal-err');
-    setStatus('La conexión del navegador al stream se cortó.', 'error');
+    if (e.name === 'AbortError') {
+      appendOutputText('[stream desconectado] El comando sigue ejecutándose en el servidor.', 'terminal-warn');
+      setStatus('Desconectado del stream. El comando continúa en el servidor.', 'warn');
+    } else {
+      appendOutputText(`Error de red/stream: ${e.message}`, 'terminal-err');
+      setStatus('La conexión del navegador al stream se cortó.', 'error');
+    }
   }
+
+  streamAbort = null;
 
   setBusy(false);
   hideStatusLater();
@@ -401,6 +448,99 @@ document.getElementById('cmd-input').addEventListener('keydown', e => {
   }
 });
 initCommandFilters();
+
+// ── Job reconnect (resume output after page refresh) ──────────────────
+
+let jobPollTimer  = null;
+let jobOutputOffset = 0;
+
+async function checkActiveJob() {
+  try {
+    const r    = await fetch(`?action=job_check&server_id=${SERVER_ID}`);
+    const data = await r.json();
+    if (data.job) showJobBanner(data.job);
+  } catch (_) {}
+}
+
+function showJobBanner(job) {
+  const banner  = document.getElementById('job-banner');
+  const label   = document.getElementById('job-banner-label');
+  const cmd     = document.getElementById('job-banner-cmd');
+  const elapsed = document.getElementById('job-banner-elapsed');
+
+  const isRunning = job.status === 'running';
+  label.textContent   = isRunning ? 'Comando en ejecución:' : 'Output de comando reciente:';
+  cmd.textContent     = job.command.length > 80 ? job.command.slice(0, 77) + '…' : job.command;
+  elapsed.textContent = isRunning
+    ? `· iniciado hace ${Math.floor(job.elapsed / 60)}m ${job.elapsed % 60}s`
+    : `· ${job.status}`;
+
+  banner.classList.remove('hidden');
+}
+
+function dismissJobBanner() {
+  document.getElementById('job-banner').classList.add('hidden');
+}
+
+async function reconnectJob() {
+  dismissJobBanner();
+  clearOutput();
+  appendOutput('<div class="terminal-line terminal-cmd">▶ Reconectando — cargando output del servidor...</div>');
+  setBusy(true);
+  startStatusTimer();
+  jobOutputOffset = 0;
+  await pollJobOutput();
+}
+
+async function pollJobOutput() {
+  try {
+    const r    = await fetch(`?action=job_output&server_id=${SERVER_ID}&offset=${jobOutputOffset}`);
+    const data = await r.json();
+
+    for (const event of (data.lines || [])) {
+      if (!event) continue;
+      if (event.type === 'output') {
+        lastOutputAt = Date.now();
+        appendOutputText(event.data, 'terminal-ok');
+      } else if (event.type === 'done') {
+        stopStatusTimer();
+        if (event.error) {
+          appendOutputText(`ERROR: ${event.error}`, 'terminal-err');
+          setStatus(event.error, 'error');
+        } else if (event.warning) {
+          appendOutputText(`AVISO: ${event.warning}`, 'terminal-warn');
+          setStatus(event.warning, 'warn');
+        } else if (event.exit_code === 0) {
+          appendOutputText('[terminado] exit code 0', 'terminal-done');
+          setStatus('Comando terminado correctamente.', 'done');
+        } else {
+          appendOutputText(`[terminado] exit code ${event.exit_code}`, 'terminal-warn');
+          setStatus(`Comando terminó con exit code ${event.exit_code}.`, 'warn');
+        }
+        setBusy(false);
+        hideStatusLater();
+        return;
+      }
+    }
+
+    jobOutputOffset = data.total;
+
+    if (data.status === 'running') {
+      jobPollTimer = window.setTimeout(pollJobOutput, 2000);
+    } else {
+      stopStatusTimer();
+      setStatus('El comando terminó en el servidor.', 'done');
+      setBusy(false);
+      hideStatusLater();
+    }
+  } catch (e) {
+    stopStatusTimer();
+    appendOutputText(`Error al reconectar: ${e.message}`, 'terminal-err');
+    setBusy(false);
+  }
+}
+
+checkActiveJob();
 
 // Template execution
 function runTemplate(id, name) {

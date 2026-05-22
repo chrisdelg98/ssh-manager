@@ -500,6 +500,25 @@ select option { background: var(--surface); color: var(--text); }
   font-size: .8rem; color: var(--muted-strong);
   font-family: var(--mono); margin-left: .5rem;
 }
+.job-banner {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem;
+  padding: .65rem 1.1rem;
+  margin-bottom: .75rem;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius);
+  font-size: .85rem;
+}
+.job-banner-info { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; min-width: 0; }
+.job-banner-label { color: var(--muted-strong); white-space: nowrap; }
+.job-banner-cmd {
+  font-family: var(--mono); font-size: .82rem;
+  color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42ch;
+}
+.job-banner-elapsed { color: var(--muted-strong); white-space: nowrap; }
+.job-banner-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+
 .terminal-layout {
   display: grid; grid-template-columns: 240px 1fr; gap: 1rem;
   height: calc(100vh - var(--topbar-h) - 8rem);
